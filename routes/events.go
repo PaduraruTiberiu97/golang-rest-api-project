@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"apiproject/db"
 	"apiproject/models"
 	"fmt"
 	"net/http"
@@ -36,7 +37,6 @@ func getEventById(context *gin.Context) {
 
 func createEvent(context *gin.Context) {
 	var event models.Event
-
 	err := context.ShouldBindJSON(&event)
 
 	if err != nil {
@@ -44,8 +44,8 @@ func createEvent(context *gin.Context) {
 		return
 	}
 
-	event.Id = 1
-	event.UserId = 1
+	userId := context.GetInt64("userId")
+	event.UserId = userId
 
 	err = event.Save()
 	if err != nil {
@@ -64,9 +64,16 @@ func updateEvent(context *gin.Context) {
 		return
 	}
 
-	_, err = models.GetEventById(id)
+	eventUserId := context.GetInt64("userId")
+	event, err := models.GetEventById(id)
+
 	if err != nil {
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not retrieve event: " + err.Error()})
+		return
+	}
+
+	if event.UserId != eventUserId {
+		context.JSON(http.StatusForbidden, gin.H{"error": "You are not authorized to update this event"})
 		return
 	}
 
@@ -94,9 +101,16 @@ func deleteEvent(context *gin.Context) {
 		return
 	}
 
+	eventUserId := context.GetInt64("userId")
 	event, err := models.GetEventById(id)
+
 	if err != nil {
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not retrieve event: " + err.Error()})
+		return
+	}
+
+	if event.UserId != eventUserId {
+		context.JSON(http.StatusForbidden, gin.H{"error": "You are not authorized to delete this event"})
 		return
 	}
 
@@ -106,4 +120,23 @@ func deleteEvent(context *gin.Context) {
 		return
 	}
 	context.JSON(http.StatusOK, gin.H{"message": "Event deleted successfully"})
+}
+
+func (e Event) CancelRegistration(userId int64) error {
+	query := `DELETE FROM registrations WHERE event_id = ? AND user_id = ?`
+	statement, err := db.DB.Prepare(query)
+	if err != nil {
+		fmt.Println("Error preparing cancel registration statement: " + err.Error())
+		return err
+	}
+
+	defer statement.Close()
+
+	_, err = statement.Exec(e.Id, userId)
+	if err != nil {
+		fmt.Println("Error executing cancel registration statement: " + err.Error())
+		return err
+	}
+
+	return nil
 }

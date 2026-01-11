@@ -47,13 +47,13 @@ func (u User) Save() error {
 	return nil
 }
 
-func (u User) ValidateCredentials() error {
-	query := `SELECT email, password FROM users WHERE email = ?`
+func (u *User) ValidateCredentials() error {
+	query := `SELECT id, password FROM users WHERE email = ?`
 
 	row := db.DB.QueryRow(query, u.Email)
 
 	var storedHashedPassword string
-	err := row.Scan(&storedHashedPassword)
+	err := row.Scan(&u.Id, &storedHashedPassword)
 	if err != nil {
 		return err
 	}

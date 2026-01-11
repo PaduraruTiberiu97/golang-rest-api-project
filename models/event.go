@@ -12,12 +12,16 @@ type Event struct {
 	Description string    `binding:"required" json:"description"`
 	Location    string    `binding:"required" json:"location"`
 	Date        time.Time `binding:"required" json:"date"`
-	UserId      int       `json:"user_id"`
+	UserId      int64     `json:"user_id"`
+}
+
+func (e *Event) CancelRegistration(userId int64) error {
+	panic("unimplemented")
 }
 
 var events []Event = []Event{}
 
-func (e Event) Save() error {
+func (e *Event) Save() error {
 	query := `INSERT INTO events (name, description, location, date, user_id) VALUES (?, ?, ?, ?, ?)`
 
 	statement, err := db.DB.Prepare(query)
@@ -114,6 +118,25 @@ func (event Event) Delete() error {
 	_, err = statement.Exec(event.Id)
 	if err != nil {
 		fmt.Println("Error executing delete statement: " + err.Error())
+		return err
+	}
+
+	return nil
+}
+
+func (e Event) Register(userId int64) error {
+	query := `INSERT INTO registrations (event_id, user_id) VALUES (?, ?)`
+	statement, err := db.DB.Prepare(query)
+	if err != nil {
+		fmt.Println("Error preparing registration statement: " + err.Error())
+		return err
+	}
+
+	defer statement.Close()
+
+	_, err = statement.Exec(e.Id, userId)
+	if err != nil {
+		fmt.Println("Error executing registration statement: " + err.Error())
 		return err
 	}
 

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"apiproject/models"
+	"apiproject/utils"
 	"fmt"
 	"net/http"
 
@@ -42,5 +43,10 @@ func login(context *gin.Context) {
 		return
 	}
 
-	context.JSON(http.StatusOK, gin.H{"message": "Login successful"})
+	token, err := utils.GenerateToken(user.Email, user.Id)
+	if err != nil {
+		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate token: " + err.Error()})
+		return
+	}
+	context.JSON(http.StatusOK, gin.H{"message": "Login successful", "token": token})
 }
