@@ -3,6 +3,8 @@ package models
 import (
 	"apiproject/db"
 	"fmt"
+
+	"apiproject/utils"
 )
 
 type User struct {
@@ -12,7 +14,7 @@ type User struct {
 }
 
 func (u User) Save() error {
-	query := `INSERT INTO users (username, email, password) VALUES (?, ?, ?)`
+	query := `INSERT INTO users (email, password) VALUES (?, ?)`
 	statement, err := db.DB.Prepare(query)
 
 	if err != nil {
@@ -22,7 +24,13 @@ func (u User) Save() error {
 
 	defer statement.Close()
 
-	result, err := statement.Exec(u.Email, u.Email, u.Password)
+	hashedPassword, err := utils.HashPassword(u.Password)
+	if err != nil {
+		fmt.Println("Error hashing password: " + err.Error())
+		return err
+	}
+
+	result, err := statement.Exec(u.Email, hashedPassword)
 	if err != nil {
 		fmt.Println("Error executing statement: " + err.Error())
 		return err
@@ -35,6 +43,25 @@ func (u User) Save() error {
 	}
 
 	u.Id = userId
+
+	return nil
+}
+
+func (u User) ValidateCredentials() error {
+	query := `SELECT email, password FROM users WHERE email = ?`
+
+	row := db.DB.QueryRow(query, u.Email)
+
+	var storedHashedPassword string
+	err := row.Scan(&storedHashedPassword)
+	if err != nil {
+		return err
+	}
+
+	passwordIsValid := utils.CheckPasswordHash(u.Password, storedHashedPassword)
+	if !passwordIsValid {
+		return fmt.Errorf("invalid credentials")
+	}
 
 	return nil
 }
