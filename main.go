@@ -14,6 +14,10 @@ func main() {
 	}
 
 	server := gin.Default()
+	if err := server.SetTrustedProxies(nil); err != nil {
+		log.Fatalf("set trusted proxies: %v", err)
+	}
+
 	routes.RegisterRoutes(server)
 
 	if err := server.Run(":8080"); err != nil {

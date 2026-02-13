@@ -7,6 +7,8 @@ import (
 )
 
 func RegisterRoutes(server *gin.Engine) {
+	server.GET("/", root)
+	server.GET("/health", health)
 	server.GET("/events", getEvents)
 	server.GET("/events/:id", getEventByID)
 	server.POST("/signup", signUp)

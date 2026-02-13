@@ -60,6 +60,8 @@ go test ./...
 
 Public:
 
+- `GET /`
+- `GET /health`
 - `POST /signup`
 - `POST /login`
 - `GET /events`
