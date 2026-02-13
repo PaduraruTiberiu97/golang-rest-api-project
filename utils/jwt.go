@@ -2,52 +2,62 @@ package utils
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const secretKey = "your_secret_key"
+const (
+	defaultJWTSecret = "dev-secret-change-me"
+	tokenTTL         = 2 * time.Hour
+)
 
-func GenerateToken(email string, userId int64) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
-		"email":  email,
-		"userId": userId,
-		"exp":    time.Now().Add(time.Hour * 2).Unix(), // Token expires in 2 hours
-	})
-
-	return token.SignedString([]byte(secretKey)) // Sign the token with the secret key
+type Claims struct {
+	Email  string `json:"email"`
+	UserID int64  `json:"userId"`
+	jwt.RegisteredClaims
 }
 
-func VerifyToken(token string) (error, int64) {
-	parasedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
-		// if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-		// 	return nil, jwt.ErrSignatureInvalid
-		// }
+func GenerateToken(email string, userID int64) (string, error) {
+	now := time.Now()
+	claims := Claims{
+		Email:  email,
+		UserID: userID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(tokenTTL)),
+		},
+	}
 
-		// commented block is the same as below
-		_, ok := token.Method.(*jwt.SigningMethodHMAC)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(jwtSecret()))
+}
 
-		if !ok {
-			return nil, errors.New("Unexpected signing method")
+func VerifyToken(tokenString string) (int64, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
 		}
-
-		return []byte(secretKey), nil
+		return []byte(jwtSecret()), nil
 	})
 	if err != nil {
-		return errors.New("Invalid token: " + err.Error()), 0
+		return 0, fmt.Errorf("parse token: %w", err)
 	}
 
-	if !parasedToken.Valid {
-		return errors.New("Invalid token"), 0
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		return 0, errors.New("invalid token")
 	}
 
-	claims, ok := parasedToken.Claims.(jwt.MapClaims)
-	if !ok {
-		return errors.New("Invalid token claims"), 0
+	return claims.UserID, nil
+}
+
+func jwtSecret() string {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		return defaultJWTSecret
 	}
-
-	userId := int64(claims["userId"].(float64))
-
-	return nil, userId
+	return secret
 }

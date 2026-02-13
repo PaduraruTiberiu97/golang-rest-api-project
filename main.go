@@ -3,15 +3,20 @@ package main
 import (
 	"apiproject/db"
 	"apiproject/routes"
+	"log"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	db.InitDB()
+	if err := db.InitDB(); err != nil {
+		log.Fatalf("database initialization failed: %v", err)
+	}
 
 	server := gin.Default()
 	routes.RegisterRoutes(server)
 
-	server.Run(":8080")
+	if err := server.Run(":8080"); err != nil {
+		log.Fatalf("server failed: %v", err)
+	}
 }

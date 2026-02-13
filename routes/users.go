@@ -3,50 +3,81 @@ package routes
 import (
 	"apiproject/models"
 	"apiproject/utils"
-	"fmt"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
-func signUp(context *gin.Context) {
-	var user models.User
-
-	err := context.ShouldBindJSON(&user)
-	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	err = user.Save()
-	if err != nil {
-		fmt.Println("Error saving user: " + err.Error())
-		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not create user: " + err.Error()})
-		return
-	}
-	context.JSON(http.StatusCreated, gin.H{"message": "User created successfully", "user": user})
+type signUpRequest struct {
+	Username string `json:"username" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=8"`
 }
 
-func login(context *gin.Context) {
-	var user models.User
+type loginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
+}
 
-	err := context.ShouldBindJSON(&user)
-	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+func signUp(c *gin.Context) {
+	var req signUpRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	err = user.ValidateCredentials()
+	user := models.User{
+		Username: req.Username,
+		Email:    req.Email,
+		Password: req.Password,
+	}
 
-	if err != nil {
-		context.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password: " + err.Error()})
+	if err := user.Save(); err != nil {
+		if errors.Is(err, models.ErrEmailTaken) {
+			c.JSON(http.StatusConflict, gin.H{"error": "email is already registered"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create user"})
 		return
 	}
 
-	token, err := utils.GenerateToken(user.Email, user.Id)
-	if err != nil {
-		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate token: " + err.Error()})
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "user created successfully",
+		"user": gin.H{
+			"id":       user.ID,
+			"username": user.Username,
+			"email":    user.Email,
+		},
+	})
+}
+
+func login(c *gin.Context) {
+	var req loginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	context.JSON(http.StatusOK, gin.H{"message": "Login successful", "token": token})
+
+	user := models.User{
+		Email:    req.Email,
+		Password: req.Password,
+	}
+
+	if err := user.ValidateCredentials(); err != nil {
+		if errors.Is(err, models.ErrInvalidCredentials) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not validate credentials"})
+		return
+	}
+
+	token, err := utils.GenerateToken(user.Email, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "login successful", "token": token})
 }

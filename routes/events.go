@@ -1,142 +1,142 @@
 package routes
 
 import (
-	"apiproject/db"
 	"apiproject/models"
-	"fmt"
+	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
 
-func getEvents(context *gin.Context) {
+func getEvents(c *gin.Context) {
 	events, err := models.GetAllEvents()
 	if err != nil {
-		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not retrieve events: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not retrieve events"})
 		return
 	}
-	context.JSON(http.StatusOK, events)
+
+	c.JSON(http.StatusOK, events)
 }
 
-func getEventById(context *gin.Context) {
-	id, err := strconv.ParseInt(context.Param("id"), 10, 64)
-	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event ID"})
+func getEventByID(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
 		return
 	}
 
-	event, err := models.GetEventById(id)
+	event, err := models.GetEventByID(id)
 	if err != nil {
-		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not retrieve event: " + err.Error()})
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not retrieve event"})
 		return
 	}
 
-	context.JSON(http.StatusOK, event)
+	c.JSON(http.StatusOK, event)
 }
 
-func createEvent(context *gin.Context) {
+func createEvent(c *gin.Context) {
 	var event models.Event
-	err := context.ShouldBindJSON(&event)
-
-	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := c.ShouldBindJSON(&event); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	userId := context.GetInt64("userId")
-	event.UserId = userId
-
-	err = event.Save()
-	if err != nil {
-		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not create event: " + err.Error()})
+	event.UserID = c.GetInt64("userID")
+	if err := event.Save(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create event"})
 		return
 	}
 
-	context.JSON(http.StatusCreated, gin.H{"message": "Event created successfully", "event": event})
+	c.JSON(http.StatusCreated, gin.H{"message": "event created successfully", "event": event})
 }
 
-func updateEvent(context *gin.Context) {
-	id, err := strconv.ParseInt(context.Param("id"), 10, 64)
-	if err != nil {
-		fmt.Println("Error parsing event ID: " + err.Error())
-		context.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event ID"})
+func updateEvent(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
 		return
 	}
 
-	eventUserId := context.GetInt64("userId")
-	event, err := models.GetEventById(id)
-
+	event, err := models.GetEventByID(id)
 	if err != nil {
-		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not retrieve event: " + err.Error()})
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not retrieve event"})
 		return
 	}
 
-	if event.UserId != eventUserId {
-		context.JSON(http.StatusForbidden, gin.H{"error": "You are not authorized to update this event"})
+	userID := c.GetInt64("userID")
+	if event.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "you are not authorized to update this event"})
 		return
 	}
 
 	var updatedEvent models.Event
-	err = context.ShouldBindJSON(&updatedEvent)
-	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := c.ShouldBindJSON(&updatedEvent); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	updatedEvent.Id = id
-	err = updatedEvent.Update()
-	if err != nil {
-		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not update event: " + err.Error()})
+	updatedEvent.ID = id
+	updatedEvent.UserID = userID
+	if err := updatedEvent.Update(); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update event"})
 		return
 	}
 
-	context.JSON(http.StatusOK, gin.H{"message": "Event updated successfully", "event": updatedEvent})
+	c.JSON(http.StatusOK, gin.H{"message": "event updated successfully", "event": updatedEvent})
 }
 
-func deleteEvent(context *gin.Context) {
-	id, err := strconv.ParseInt(context.Param("id"), 10, 64)
+func deleteEvent(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	event, err := models.GetEventByID(id)
 	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event ID"})
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not retrieve event"})
 		return
 	}
 
-	eventUserId := context.GetInt64("userId")
-	event, err := models.GetEventById(id)
-
-	if err != nil {
-		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not retrieve event: " + err.Error()})
+	userID := c.GetInt64("userID")
+	if event.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "you are not authorized to delete this event"})
 		return
 	}
 
-	if event.UserId != eventUserId {
-		context.JSON(http.StatusForbidden, gin.H{"error": "You are not authorized to delete this event"})
+	if err := event.Delete(); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete event"})
 		return
 	}
 
-	err = event.Delete()
-	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	context.JSON(http.StatusOK, gin.H{"message": "Event deleted successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "event deleted successfully"})
 }
 
-func (e Event) CancelRegistration(userId int64) error {
-	query := `DELETE FROM registrations WHERE event_id = ? AND user_id = ?`
-	statement, err := db.DB.Prepare(query)
+func parseIDParam(c *gin.Context, param string) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param(param), 10, 64)
 	if err != nil {
-		fmt.Println("Error preparing cancel registration statement: " + err.Error())
-		return err
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return 0, false
 	}
 
-	defer statement.Close()
-
-	_, err = statement.Exec(e.Id, userId)
-	if err != nil {
-		fmt.Println("Error executing cancel registration statement: " + err.Error())
-		return err
-	}
-
-	return nil
+	return id, true
 }

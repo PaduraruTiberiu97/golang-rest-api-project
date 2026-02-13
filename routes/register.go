@@ -2,52 +2,58 @@ package routes
 
 import (
 	"apiproject/models"
+	"database/sql"
+	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
 
-func registerForEvent(context *gin.Context) {
-	userId := context.GetInt64("userId")
-	eventId, err := strconv.ParseInt(context.Param("id"), 10, 64)
-
-	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": "Could not parse event ID: " + err.Error()})
+func registerForEvent(c *gin.Context) {
+	userID := c.GetInt64("userID")
+	eventID, ok := parseIDParam(c, "id")
+	if !ok {
 		return
 	}
 
-	event, err := models.GetEventById(eventId)
+	event, err := models.GetEventByID(eventID)
 	if err != nil {
-		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not retrieve event: " + err.Error()})
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not retrieve event"})
 		return
 	}
 
-	err = event.Register(userId)
-	if err != nil {
-		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not register for event: " + err.Error()})
+	if err := event.Register(userID); err != nil {
+		if errors.Is(err, models.ErrAlreadyRegistered) {
+			c.JSON(http.StatusConflict, gin.H{"error": "already registered for this event"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not register for event"})
 		return
 	}
 
-	context.JSON(http.StatusOK, gin.H{"message": "Successfully registered for event"})
+	c.JSON(http.StatusCreated, gin.H{"message": "successfully registered for event"})
 }
 
-func cancelRegistration(context *gin.Context) {
-	userId := context.GetInt64("userId")
-	eventId, err := strconv.ParseInt(context.Param("id"), 10, 64)
-	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": "Could not parse event ID: " + err.Error()})
+func cancelRegistration(c *gin.Context) {
+	userID := c.GetInt64("userID")
+	eventID, ok := parseIDParam(c, "id")
+	if !ok {
 		return
 	}
 
-	var event models.Event
-	event.Id = eventId
-
-	err = event.CancelRegistration(userId)
-	if err != nil {
-		context.JSON(http.StatusInternalServerError, gin.H{"error": "Could not cancel registration: " + err.Error()})
+	event := models.Event{ID: eventID}
+	if err := event.CancelRegistration(userID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "registration not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not cancel registration"})
 		return
 	}
 
-	context.JSON(http.StatusOK, gin.H{"message": "Successfully canceled registration"})
+	c.JSON(http.StatusOK, gin.H{"message": "successfully canceled registration"})
 }

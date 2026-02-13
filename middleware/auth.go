@@ -3,25 +3,28 @@ package middleware
 import (
 	"apiproject/utils"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-func Authenticate(context *gin.Context) {
-	token := context.Request.Header.Get("Authorization")
-
+func Authenticate(c *gin.Context) {
+	token := strings.TrimSpace(c.GetHeader("Authorization"))
 	if token == "" {
-		context.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Not authorized"})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
 		return
 	}
 
-	err, userId := utils.VerifyToken(token)
+	if strings.HasPrefix(strings.ToLower(token), "bearer ") {
+		token = strings.TrimSpace(token[len("Bearer "):])
+	}
+
+	userID, err := utils.VerifyToken(token)
 	if err != nil {
-		context.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization token"})
 		return
 	}
 
-	context.Set("userId", userId)
-
-	context.Next()
+	c.Set("userID", userID)
+	c.Next()
 }

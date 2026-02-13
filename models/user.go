@@ -2,65 +2,65 @@ package models
 
 import (
 	"apiproject/db"
+	"apiproject/utils"
+	"database/sql"
+	"errors"
 	"fmt"
 
-	"apiproject/utils"
+	sqlite3 "github.com/mattn/go-sqlite3"
 )
 
+var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrEmailTaken         = errors.New("email already in use")
+)
+
+// User stores account credentials.
 type User struct {
-	Id       int64  `json:"id"`
-	Email    string `binding:"required" json:"email"`
-	Password string `binding:"required" json:"password"`
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"-"`
 }
 
-func (u User) Save() error {
-	query := `INSERT INTO users (email, password) VALUES (?, ?)`
-	statement, err := db.DB.Prepare(query)
-
-	if err != nil {
-		fmt.Println("Error preparing statement: " + err.Error())
-		return err
-	}
-
-	defer statement.Close()
-
+func (u *User) Save() error {
 	hashedPassword, err := utils.HashPassword(u.Password)
 	if err != nil {
-		fmt.Println("Error hashing password: " + err.Error())
-		return err
+		return fmt.Errorf("hash password: %w", err)
 	}
 
-	result, err := statement.Exec(u.Email, hashedPassword)
+	query := `INSERT INTO users (username, email, password) VALUES (?, ?, ?)`
+	result, err := db.DB.Exec(query, u.Username, u.Email, hashedPassword)
 	if err != nil {
-		fmt.Println("Error executing statement: " + err.Error())
-		return err
+		var sqliteErr sqlite3.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.Code == sqlite3.ErrConstraint {
+			return ErrEmailTaken
+		}
+		return fmt.Errorf("insert user: %w", err)
 	}
 
-	userId, err := result.LastInsertId()
+	userID, err := result.LastInsertId()
 	if err != nil {
-		fmt.Println("Error getting last insert id: " + err.Error())
-		return err
+		return fmt.Errorf("read inserted user id: %w", err)
 	}
 
-	u.Id = userId
-
+	u.ID = userID
 	return nil
 }
 
 func (u *User) ValidateCredentials() error {
 	query := `SELECT id, password FROM users WHERE email = ?`
 
-	row := db.DB.QueryRow(query, u.Email)
-
 	var storedHashedPassword string
-	err := row.Scan(&u.Id, &storedHashedPassword)
-	if err != nil {
-		return err
+	if err := db.DB.QueryRow(query, u.Email).Scan(&u.ID, &storedHashedPassword); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInvalidCredentials
+		}
+		return fmt.Errorf("lookup credentials: %w", err)
 	}
 
-	passwordIsValid := utils.CheckPasswordHash(u.Password, storedHashedPassword)
-	if !passwordIsValid {
-		return fmt.Errorf("invalid credentials")
+	if !utils.CheckPasswordHash(u.Password, storedHashedPassword) {
+		return ErrInvalidCredentials
 	}
 
 	return nil
